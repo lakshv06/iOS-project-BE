@@ -24,12 +24,13 @@ const haversineDistance = (lat1, lon1, lat2, lon2) => {
 };
 
 // Function to handle incoming WebSocket messages
-const handleWebSocketMessage = async (message, resolve, hasAccepted, signInApproverLocation) => {
+const handleWebSocketMessage = async (message, resolve, hasAccepted, signInApproverLocation, ws, redisClient, email, approversDeviceIdentifier) => {
   try {
     const { response } = JSON.parse(message);
-    console.log("eheheheh respinse: ", response.response);
-    console.log("askjf location: ", response.location);
-    console.log("approveer's location: ", signInApproverLocation);
+    console.log("eheheheh response: ", response.response);
+    console.log("received location: ", response.location);
+    console.log("approver's location: ", signInApproverLocation);
+
     let inVicinity = false;
     const distance = haversineDistance(
       response.location.latitude, response.location.longitude,
@@ -42,34 +43,42 @@ const handleWebSocketMessage = async (message, resolve, hasAccepted, signInAppro
       inVicinity = true;
     }
 
-    console.log("askfjh inVicinty:", inVicinity);
+    console.log("inVicinity: ", inVicinity);
+
+    // Normalize and trim device identifiers before comparison
+    const normalizedApproversDeviceIdentifier = approversDeviceIdentifier.trim();
 
     if (response.response === "accept" && inVicinity) {
       hasAccepted = true;
       resolve({ accepted: true, signInApproverLocation });
 
       // Notify other devices to dismiss their notifications
-      // const connectionKey = `connections:${email}`;
-      // const devices = await redisClient.lRange(connectionKey, 0, -1);
+      const connectionKey = `connections:${email}`;
+      const devices = await redisClient.lRange(connectionKey, 0, -1);
+      console.log("Devices list: ", devices);
 
-      // devices.forEach((deviceData) => {
-      //   try {
-      //     const { deviceIdentifier: otherDeviceIdentifier } = JSON.parse(deviceData);
-      //     if (otherDeviceIdentifier !== deviceIdentifier) { // Exclude the responding device
-      //       const ws = getConnection(otherDeviceIdentifier);
-      //       if (ws && ws.readyState === 1) {
-      //         ws.send(
-      //           JSON.stringify({
-      //             type: "dismiss",
-      //             message: "Login attempt notification dismissed"
-      //           })
-      //         );
-      //       }
-      //     }
-      //   } catch (err) {
-      //     console.error("Error parsing device data", err);
-      //   }
-      // });
+      devices.forEach((deviceData) => {
+        try {
+          const { deviceIdentifier: otherDeviceIdentifier } = JSON.parse(deviceData);
+          const normalizedOtherDeviceIdentifier = otherDeviceIdentifier.trim();
+          console.log(`Comparing ${normalizedOtherDeviceIdentifier} with ${normalizedApproversDeviceIdentifier}`);
+
+          if (normalizedOtherDeviceIdentifier !== normalizedApproversDeviceIdentifier) {
+            const ws = getConnection(normalizedOtherDeviceIdentifier);
+            console.log("WebSocket for dismissal: ", ws);
+            if (ws && ws.readyState === 1) {
+              ws.send(
+                JSON.stringify({
+                  type: "dismiss",
+                  message: "Login attempt notification dismissed"
+                })
+              );
+            }
+          }
+        } catch (err) {
+          console.error("Error parsing device data", err);
+        }
+      });
     }
   } catch (error) {
     console.error("Error parsing WebSocket message:", error);
@@ -154,7 +163,7 @@ router.post("/", async (req, res) => {
                   );
 
                   ws.on("message", (message) => {
-                    handleWebSocketMessage(message, resolve, hasAccepted, signInLocation);
+                    handleWebSocketMessage(message, resolve, hasAccepted, signInLocation, ws, redisClient, email, deviceIdentifier);
                   });
                 } else 
                 if (ws) {
@@ -170,7 +179,7 @@ router.post("/", async (req, res) => {
                     );
 
                     ws.on("message", (message) => {
-                      handleWebSocketMessage(message, resolve, hasAccepted, signInLocation);
+                      handleWebSocketMessage(message, resolve, hasAccepted, signInLocation, ws, redisClient, email, deviceIdentifier);
                     });
                   });
                 } else {

@@ -1,4 +1,3 @@
-// src/wsManager.js
 const wsMap = new Map();
 
 function addConnection(deviceIdentifier, ws) {
