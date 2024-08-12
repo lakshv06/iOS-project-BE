@@ -78,6 +78,12 @@ function startServer() {
         }
           logActiveConnections();
         }
+        else if (type === "closeConnection") {
+          console.log(`Close connection message received for device: ${deviceIdentifier}`);
+          if (ws.deviceIdentifier === deviceIdentifier) {
+              ws.close();
+          }
+      }
       } catch (err) {
         console.error("Error parsing message", err);
       }
